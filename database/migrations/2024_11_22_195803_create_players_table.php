@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('players', function (Blueprint $table) {
             $table->id();
             $table->timestamps();
+            $table->char('name', 32)->unique();
         });
     }
 
