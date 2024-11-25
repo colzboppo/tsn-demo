@@ -25,7 +25,7 @@ Follow these steps to set up the application:
 2. Install PHP/JS dependancies:
     ```bash
     composer install
-    npm/yarn install
+    npm install && npm run build
     ```
 3. Configure env variables:
     ```bash
@@ -43,4 +43,5 @@ Follow these steps to set up the application:
     ```bash
     php artisan serve
     php artisan test
+    php artisan test --group=play_game
     ```

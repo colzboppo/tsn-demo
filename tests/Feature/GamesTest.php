@@ -236,7 +236,7 @@ class GamesTest extends TestCase
             if ($game->finished) {
                 // create new game
                 $games_played++;
-                if (!$game->winner) {
+                if (!$game->winner || $games_played < 10) {
                     $game = $this->lobby->playerStartGame($players->first());
                     $this->lobby->playerJoinGame($game, $players->last());
                 }
