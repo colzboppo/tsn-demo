@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Log;
 
 class Games extends Model
@@ -90,7 +89,7 @@ class Games extends Model
         $this->started_at = now();
         $this->save();
 
-        Log::info("Game drawn!!");
+        Log::info("Game started..");
 
         return $this;
     }
@@ -110,6 +109,8 @@ class Games extends Model
     {
         $this->finished_at = now();
         $this->save();
+
+        Log::info("Game drawn!!");
 
         return $this;
     }
@@ -166,8 +167,10 @@ class Games extends Model
 
 
         if ($winning_move) {
+            Log::debug('WINNING Board:', $board);
             $this->winGame($winning_move);
         } else if (!$winning_move && $moves->count() >= count($board[1]) * count($board)) {
+            Log::debug('DRAWN Board:', $board);
             $this->drawGame();
         }
 

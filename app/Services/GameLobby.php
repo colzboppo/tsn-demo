@@ -123,6 +123,11 @@ class GameLobby
         $this->broadcastGameUpdate($game, $move);
     }
 
+    public function getPlayerGames(Players $player)
+    {
+        return Games::where(fn ($q) => $q->inProgress()->whereHas('players', fn ($q) => $q->where('id', $player->getKey())))->orWhere(fn ($q) => $q->starting())->get();
+    }
+
     /**
      * Broadcast the updated lobby to all connected clients.
      */

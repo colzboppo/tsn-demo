@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\GameLobbyException;
 use App\Models\Games;
 use App\Services\GameLobby;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -10,6 +11,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Redis;
 use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\Mime\BodyRendererInterface;
 
 class GamesTest extends TestCase
 {
@@ -36,7 +38,7 @@ class GamesTest extends TestCase
         });
     }
 
-    protected function getValidMove(Games $game): ?array
+    protected function getValidMove(Games $game): array
     {
         do {
             $move = [$this->faker->randomElement([1,2,3]), $this->faker->randomElement([1,2,3])];
@@ -44,8 +46,6 @@ class GamesTest extends TestCase
             if ($game->isValidMove($move)) return $move;
 
         } while ($game->isInProgress());
-
-        return null;
     }
 
     public function test_can_create_player(): void
@@ -54,7 +54,7 @@ class GamesTest extends TestCase
 
         $response = $this->post('/player', ['name' => $this->faker->name]);
 
-        $response->assertStatus(200);
+        $response->assertRedirect('/join/1');
     }
     
     public function test_can_join_lobby(): void
@@ -88,9 +88,6 @@ class GamesTest extends TestCase
         $response->assertStatus(200);
     }
 
-    /**
-     * play a quickly won game
-     */
     public function test_can_start_game(): void
     {
         $players = $this->addPlayers(2);
@@ -103,6 +100,8 @@ class GamesTest extends TestCase
     /**
      * play a quickly won game
      */
+    #[Group("win_game")]
+    #[Group("play_game")]
     public function test_can_win_game(): void
     {
         $players = $this->addPlayers(2);
@@ -111,9 +110,9 @@ class GamesTest extends TestCase
 
         $this->assertTrue($game->isInProgress());
         
-        collect(range(1,3))->each(function ($i) use ($game, $players) {
-            $this->lobby->playerMoveGame($game, $players->first(), [$i, $i]);
-            if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $players->last(), [$i===3?1:2, $i===2?3:$i]);
+        collect(range(1,3))->each(function ($i) use ($game) {
+            $this->lobby->playerMoveGame($game, $game->players->first(), [$i, $i]); // winning moves
+            if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->last(), [$i===3?1:2, $i===2?3:$i]); // losing moves
         });
 
         $this->assertTrue($game->finished);
@@ -124,6 +123,8 @@ class GamesTest extends TestCase
     /**
      * play a series of random moves and test for win/draw
      */
+    #[Group("random_game")]
+    #[Group("play_game")]
     public function test_random_game(): void
     {
         $players = $this->addPlayers(2);
@@ -132,9 +133,9 @@ class GamesTest extends TestCase
 
         $this->assertTrue($game->isInProgress());
         
-        collect(range(1,5))->each(function ($i) use ($game, $players) {
-            if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $players->first(), $this->getValidMove($game));
-            if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $players->last(), $this->getValidMove($game));
+        collect(range(1,5))->each(function ($i) use ($game) {
+            if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+            if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->last(), $this->getValidMove($game));
         });
 
         $this->assertTrue($game->finished);
@@ -142,8 +143,142 @@ class GamesTest extends TestCase
         if (!$game->winner) {
             $this->assertTrue($game->isDraw);   
         }
-        
-        // isDraw vs. winner ??
-
     }
+
+    /**
+     * play one game, invalid move order
+     */
+    #[Group("invalid_game")]
+    #[Group("play_game")]
+    public function test_game_invalid_moves_order(): void
+    {
+        $players = $this->addPlayers(2);
+
+        $game = $this->lobby->playerStartGame($players->first());
+        $this->lobby->playerJoinGame($game, $players->last());
+
+        $this->assertTrue($game->isInProgress());
+
+        // first move
+        $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+
+        // test wrong player (first player again) moves
+        $this->expectException(GameLobbyException::class);
+        $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+    }
+
+    /**
+     * play one game, invalid player move
+     */
+    #[Group("invalid_game")]
+    #[Group("play_game")]
+    public function test_game_invalid_player_move(): void
+    {
+        $players = $this->addPlayers(2);
+
+        $game = $this->lobby->playerStartGame($players->first());
+        $this->lobby->playerJoinGame($game, $players->last());
+
+        $this->assertTrue($game->isInProgress());
+
+        // first move
+        $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+
+        // test player invalid move (first move again) 
+        $this->expectException(GameLobbyException::class);
+        $this->lobby->playerMoveGame($game, $game->players->last(), $game->moves->first()->move);
+    }
+    
+    /**
+     * play one game, invalid move player
+     */
+    #[Group("invalid_game")]
+    #[Group("play_game")]
+    public function test_game_invalid_moves_player(): void
+    {
+        $players = $this->addPlayers(2);
+
+        $game = $this->lobby->playerStartGame($players->first());
+        $this->lobby->playerJoinGame($game, $players->last());
+
+        $this->assertTrue($game->isInProgress());
+
+        // first move
+        $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+
+        // test random player invalid move 
+        $this->expectException(GameLobbyException::class);
+        $this->lobby->playerMoveGame($game, $this->addPlayers()->first(), $this->getValidMove($game));
+    }
+
+    /**
+     * add many players, play many games, until one wins...
+     */
+    #[Group("many_game")]
+    #[Group("play_game")]
+    public function test_many_games_consecutively(): void
+    {
+        $players = $this->addPlayers(2);
+
+        $game = $this->lobby->playerStartGame($players->first());
+        $this->lobby->playerJoinGame($game, $players->last());
+
+        $this->assertTrue($game->isInProgress());
+
+        $games_played=0;
+        while (!$game->winner && $game->isInProgress()) {
+            
+            collect(range(1,5))->each(function ($i) use ($game) {
+                if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+                if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->last(), $this->getValidMove($game));
+            });
+
+            if ($game->finished) {
+                // create new game
+                $games_played++;
+                if (!$game->winner) {
+                    $game = $this->lobby->playerStartGame($players->first());
+                    $this->lobby->playerJoinGame($game, $players->last());
+                }
+            }
+        }
+
+        $this->assertGreaterThan(1, $games_played);
+        $this->assertNotNull($game->winner);
+    }
+    
+    #[Group("many_players")]
+    #[Group("play_game")]
+    public function test_many_player_games_consecutively(): void
+    {
+        $players = $this->addPlayers($this->faker->randomElement([2,5,8,15]));
+
+        $game = $this->lobby->playerStartGame($players->random());
+        $this->lobby->playerJoinGame($game, $players->reject(fn ($p) => $p->getKey() === $game->players->first()->getKey())->random());
+
+        $this->assertTrue($game->isInProgress());
+
+        $games_played=0;
+        while (!$game->winner && $game->isInProgress()) {
+            
+            collect(range(1,5))->each(function ($i) use ($game) {
+                if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->first(), $this->getValidMove($game));
+                if ($game->isInProgress()) $this->lobby->playerMoveGame($game, $game->players->last(), $this->getValidMove($game));
+            });
+
+            if ($game->finished) {
+                // create new game (new players)
+                $games_played++;
+                // dump('game over', $game->winner ? 'WIN: '.$game->winner->name:'DRAW', $games_played, $game->players->pluck('name'), $game->moves()->where(fn ($q) => $q->when($game->winner, fn ($q) => $q->where('player_id', $game->winner->getKey())))->get()->map(fn ($move) => [$move->player->name => $move->move])->toArray());
+                if (!$game->winner) {
+                    $game = $this->lobby->playerStartGame($players->random()->first());
+                    $this->lobby->playerJoinGame($game, $players->reject(fn ($p) => $p->getKey() === $game->players->first()->getKey())->random());
+                }
+            }
+        }
+
+        $this->assertGreaterThan(0, $games_played);
+        $this->assertNotNull($game->winner);
+    }
+
 }

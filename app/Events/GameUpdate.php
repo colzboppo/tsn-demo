@@ -31,6 +31,14 @@ class GameUpdate implements ShouldBroadcastNow
         $this->move = $move;
     }
 
+    public function broadcastWith(): array
+    {
+        return [
+            'game' => $this->game->toArray(),
+            'move' => $this->move,
+        ];
+    }
+
     /**
      * Get the channels the event should broadcast on.
      *

@@ -17,24 +17,31 @@ class LobbyController extends Controller
     }
 
     public function join_lobby(Players $player)
-    {        
+    {
         $player = $this->lobby->getPlayer();
 
         if (!$player) {
             abort(403, "Player does not exist, create one first..");
         }
 
-        $players = $this->lobby->getPlayers();
+        $lobby = $this->lobby->getPlayers();
 
         $currentGame = $player->currentGame;
 
         $startingGames = Games::starting()->get();
 
-        return view('lobby', compact('players', 'player', 'currentGame'));
+        return view('lobby', compact('player', 'lobby'));
     }
 
     public function create_player(Request $request)
     {
-        $this->lobby->addPlayer($request->input('name'));
+        $player = $this->lobby->addPlayer($request->input('name'));
+
+        return redirect('/join/' . $player->getKey());
+    }
+
+    public function get_players()
+    {
+        return response()->json(['players' => $this->lobby->getPlayers()]);
     }
 }
