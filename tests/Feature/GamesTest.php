@@ -11,7 +11,6 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Redis;
 use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\Mime\BodyRendererInterface;
 
 class GamesTest extends TestCase
 {
